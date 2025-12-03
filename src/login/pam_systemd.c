@@ -918,9 +918,13 @@ _public_ PAM_EXTERN int pam_sm_open_session(
 
         pam_debug_syslog(handle, debug, "pam-systemd initializing");
 
+        pam_syslog(handle, LOG_DEBUG, "pam-systemd: pam_sm_open_session called"); // 新增日志
+
         r = acquire_user_record(handle, &ur);
-        if (r != PAM_SUCCESS)
+        if (r != PAM_SUCCESS) {
+                pam_syslog(handle, LOG_DEBUG, "pam-systemd: acquire_user_record failed: %d", r); // 新增日志
                 return r;
+        }
 
         /* Make most of this a NOP on non-logind systems */
         if (!logind_running())
@@ -1085,11 +1089,16 @@ _public_ PAM_EXTERN int pam_sm_open_session(
                                    &context,
                                    false /* avoid_pidfd = */,
                                    &m);
-        if (r < 0)
+        if (r < 0) {
+                pam_syslog(handle, LOG_DEBUG, "pam-systemd: create_session_message failed: %d", r); // 新增日志
                 return pam_bus_log_create_error(handle, r);
+        } else {
+                pam_syslog(handle, LOG_DEBUG, "pam-systemd: create_session_message success"); // 新增日志
+        }
 
         r = sd_bus_call(bus, m, LOGIN_SLOW_BUS_CALL_TIMEOUT_USEC, &error, &reply);
         if (r < 0) {
+                pam_syslog(handle, LOG_DEBUG, "pam-systemd: sd_bus_call failed: %d", r); // 新增日志
                 if (sd_bus_error_has_name(&error, BUS_ERROR_SESSION_BUSY)) {
                         pam_debug_syslog(handle, debug,
                                          "Not creating session: %s", bus_error_message(&error, r));
@@ -1116,6 +1125,8 @@ _public_ PAM_EXTERN int pam_sm_open_session(
                                    "Failed to create session: %s", bus_error_message(&error, r));
                         return PAM_SESSION_ERR;
                 }
+        } else {
+                pam_syslog(handle, LOG_DEBUG, "pam-systemd: sd_bus_call success, session should be created"); // 新增日志
         }
 
         r = sd_bus_message_read(reply,
