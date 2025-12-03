@@ -709,13 +709,18 @@ static int create_session(
         int r;
 
         assert(message);
+      // 1. 入口参数日志
+      log_debug("logind: create_session called: uid=%u pid=%d service=%s type=%s class=%s desktop=%s seat=%s vtnr=%u tty=%s display=%s remote=%d remote_user=%s remote_host=%s flags=%" PRIu64,
+      uid, pid, strna(service), strna(type), strna(class), strna(desktop), strna(cseat), vtnr, strna(tty), strna(display), remote, strna(remote_user), strna(remote_host), flags);
 
-        if (!uid_is_valid(uid))
+        if (!uid_is_valid(uid)){
+                log_debug("logind: invalid uid: %u", uid);
                 return sd_bus_error_set(error, SD_BUS_ERROR_INVALID_ARGS, "Invalid UID");
-
-        if (flags != 0)
+        }
+        if (flags != 0){
+                log_debug("logind: flags must be zero, got: %" PRIu64, flags);
                 return sd_bus_error_set(error, SD_BUS_ERROR_INVALID_ARGS, "Flags must be zero.");
-
+        }
         if (pidfd >= 0) {
                 r = pidref_set_pidfd(&leader, pidfd);
                 if (r < 0)
@@ -743,25 +748,30 @@ static int create_session(
                         return r;
         }
 
-        if (leader.pid == 1 || leader.pid == getpid_cached())
+        if (leader.pid == 1 || leader.pid == getpid_cached()){
+                log_debug("logind: invalid leader pid: %d", leader.pid);
                 return sd_bus_error_set(error, SD_BUS_ERROR_INVALID_ARGS, "Invalid leader PID");
-
+        }
         if (isempty(type))
                 t = _SESSION_TYPE_INVALID;
         else {
                 t = session_type_from_string(type);
-                if (t < 0)
+                if (t < 0){
+                        log_debug("logind: invalid session type: %s", type);
                         return sd_bus_error_setf(error, SD_BUS_ERROR_INVALID_ARGS,
                                                  "Invalid session type %s", type);
+                        }
         }
 
         if (isempty(class))
                 c = _SESSION_CLASS_INVALID;
         else {
                 c = session_class_from_string(class);
-                if (c < 0)
+                if (c < 0){
+                        log_debug("logind: invalid session class: %s", class);
                         return sd_bus_error_setf(error, SD_BUS_ERROR_INVALID_ARGS,
                                                  "Invalid session class %s", class);
+                        }
         }
 
         if (isempty(desktop))
@@ -907,13 +917,15 @@ static int create_session(
         manager_reconnect_utmp(m);
 
         r = manager_add_user_by_uid(m, uid, &user);
-        if (r < 0)
+        if (r < 0){
+                log_debug("logind: manager_add_user_by_uid failed: %d", r);
                 goto fail;
-
+        }
         r = manager_add_session(m, id, &session);
-        if (r < 0)
+        if (r < 0){
+                log_debug("logind: manager_add_session failed: %d", r);
                 goto fail;
-
+        }
         session_set_user(session, user);
         r = session_set_leader_consume(session, TAKE_PIDREF(leader));
         if (r < 0)
@@ -985,9 +997,10 @@ static int create_session(
                 goto fail;
 
         r = session_start(session, message, error);
-        if (r < 0)
+        if (r < 0){
+                log_debug("logind: session_start failed: %d", r);
                 goto fail;
-
+        }
         r = sd_bus_message_exit_container(message);
         if (r < 0)
                 goto fail;
@@ -996,6 +1009,7 @@ static int create_session(
 
         /* Now, let's wait until the slice unit and stuff got created. We send the reply back from
          * session_send_create_reply(). */
+        log_debug("logind: session created successfully: id=%s", id);
 
         return 1;
 
@@ -1006,6 +1020,7 @@ fail:
         if (user)
                 user_add_to_gc_queue(user);
 
+        log_debug("logind: create_session failed, cleaning up. r=%d", r);
         return r;
 }
 
@@ -1037,8 +1052,12 @@ static int method_create_session(sd_bus_message *message, void *userdata, sd_bus
                                 &remote,
                                 &remote_user,
                                 &remote_host);
-        if (r < 0)
-                return r;
+    if (r < 0) {
+        log_debug("logind: sd_bus_message_read failed: %d", r); // 新增日志
+        return r;
+    } else {
+        log_debug("logind: sd_bus_message_read success, r=%d", r); // 新增日志
+    }
 
         return create_session(
                         message,
