@@ -610,56 +610,69 @@ static int synthetic_nobody_user_build(UserRecord **ret) {
 }
 
 int userdb_by_name(const char *name, UserDBFlags flags, UserRecord **ret) {
-        _cleanup_(userdb_iterator_freep) UserDBIterator *iterator = NULL;
-        _cleanup_(json_variant_unrefp) JsonVariant *query = NULL;
-        int r;
+    _cleanup_(userdb_iterator_freep) UserDBIterator *iterator = NULL;
+    _cleanup_(json_variant_unrefp) JsonVariant *query = NULL;
+    int r;
 
-        if (!valid_user_group_name(name, VALID_USER_RELAX))
-                return -EINVAL;
+    log_debug("userdb_by_name: called with name=%s", name); // 新增日志
 
-        r = json_build(&query, JSON_BUILD_OBJECT(
-                                       JSON_BUILD_PAIR("userName", JSON_BUILD_STRING(name))));
-        if (r < 0)
-                return r;
+    if (!valid_user_group_name(name, VALID_USER_RELAX)) {
+        log_debug("userdb_by_name: invalid user/group name: %s", name); // 新增日志
+        return -EINVAL;
+    }
 
-        iterator = userdb_iterator_new(LOOKUP_USER, flags);
-        if (!iterator)
-                return -ENOMEM;
-
-        r = userdb_start_query(iterator, "io.systemd.UserDatabase.GetUserRecord", false, query, flags);
-        if (r >= 0) {
-                r = userdb_process(iterator, ret, NULL, NULL, NULL);
-                if (r >= 0)
-                        return r;
-        }
-
-        if (!FLAGS_SET(flags, USERDB_EXCLUDE_DROPIN) && !iterator->dropin_covered) {
-                r = dropin_user_record_by_name(name, NULL, flags, ret);
-                if (r >= 0)
-                        return r;
-        }
-
-        if (!FLAGS_SET(flags, USERDB_EXCLUDE_NSS) && !iterator->nss_covered) {
-                /* Make sure the NSS lookup doesn't recurse back to us. */
-
-                r = userdb_iterator_block_nss_systemd(iterator);
-                if (r >= 0) {
-                        /* Client-side NSS fallback */
-                        r = nss_user_record_by_name(name, !FLAGS_SET(flags, USERDB_SUPPRESS_SHADOW), ret);
-                        if (r >= 0)
-                                return r;
-                }
-        }
-
-        if (!FLAGS_SET(flags, USERDB_DONT_SYNTHESIZE)) {
-                if (streq(name, "root"))
-                        return synthetic_root_user_build(ret);
-
-                if (streq(name, NOBODY_USER_NAME) && synthesize_nobody())
-                        return synthetic_nobody_user_build(ret);
-        }
-
+    r = json_build(&query, JSON_BUILD_OBJECT(
+                               JSON_BUILD_PAIR("userName", JSON_BUILD_STRING(name))));
+    log_debug("userdb_by_name: json_build result=%d", r); // 新增日志
+    if (r < 0)
         return r;
+
+    iterator = userdb_iterator_new(LOOKUP_USER, flags);
+    log_debug("userdb_by_name: userdb_iterator_new result=%p", iterator); // 新增日志
+    if (!iterator)
+        return -ENOMEM;
+
+    r = userdb_start_query(iterator, "io.systemd.UserDatabase.GetUserRecord", false, query, flags);
+    log_debug("userdb_by_name: userdb_start_query result=%d", r); // 新增日志
+    if (r >= 0) {
+        r = userdb_process(iterator, ret, NULL, NULL, NULL);
+        log_debug("userdb_by_name: userdb_process result=%d", r); // 新增日志
+        if (r >= 0)
+            return r;
+    }
+
+    if (!FLAGS_SET(flags, USERDB_EXCLUDE_DROPIN) && !iterator->dropin_covered) {
+        r = dropin_user_record_by_name(name, NULL, flags, ret);
+        log_debug("userdb_by_name: dropin_user_record_by_name result=%d", r); // 新增日志
+        if (r >= 0)
+            return r;
+    }
+
+    if (!FLAGS_SET(flags, USERDB_EXCLUDE_NSS) && !iterator->nss_covered) {
+        r = userdb_iterator_block_nss_systemd(iterator);
+        log_debug("userdb_by_name: userdb_iterator_block_nss_systemd result=%d", r); // 新增日志
+        if (r >= 0) {
+            r = nss_user_record_by_name(name, !FLAGS_SET(flags, USERDB_SUPPRESS_SHADOW), ret);
+            log_debug("userdb_by_name: nss_user_record_by_name result=%d", r); // 新增日志
+            if (r >= 0)
+                return r;
+        }
+    }
+
+    if (!FLAGS_SET(flags, USERDB_DONT_SYNTHESIZE)) {
+        if (streq(name, "root")) {
+            log_debug("userdb_by_name: synthesize root user"); // 新增日志
+            return synthetic_root_user_build(ret);
+        }
+
+        if (streq(name, NOBODY_USER_NAME) && synthesize_nobody()) {
+            log_debug("userdb_by_name: synthesize nobody user"); // 新增日志
+            return synthetic_nobody_user_build(ret);
+        }
+    }
+
+    log_debug("userdb_by_name: final result=%d", r); // 新增日志
+    return r;
 }
 
 int userdb_by_uid(uid_t uid, UserDBFlags flags, UserRecord **ret) {
