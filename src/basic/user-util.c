@@ -716,8 +716,9 @@ bool valid_user_group_name(const char *u, ValidUserFlags flags) {
 
         if (parse_uid(u, NULL) >= 0) /* Something that parses as numeric UID string is valid exactly when the
                                       * flag for it is set */
-                return FLAGS_SET(flags, VALID_USER_ALLOW_NUMERIC);
+                //return FLAGS_SET(flags, VALID_USER_ALLOW_NUMERIC);
                 // return true;
+                return FLAGS_SET(flags, VALID_USER_ALLOW_NUMERIC) || FLAGS_SET(flags, VALID_USER_RELAX);
 
         if (FLAGS_SET(flags, VALID_USER_RELAX)) {
 
