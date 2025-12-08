@@ -1933,6 +1933,11 @@ static int verify_shutdown_creds(
         interactive = flags & SD_LOGIND_INTERACTIVE;
 
         if (multiple_sessions) {
+                log_debug("logind: suspend/hibernate requested, but multiple user sessions are active (current uid=%u)", uid);
+                HASHMAP_FOREACH(Session *session, m->sessions) {
+                if (session->class == SESSION_USER)
+                                log_debug("logind: active session: id=%s uid=%u user=%s seat=%s", session->id, session->user->user_record->uid, session->user->user_record->user_name, session->seat ? session->seat->id : "(none)");
+                }
                 r = bus_verify_polkit_async(
                                 message,
                                 CAP_SYS_BOOT,
