@@ -765,6 +765,7 @@ Manager* manager_free(Manager *m) {
 
         iovec_done(&m->dhcp_relay_remote_id);
         tlv_done(&m->dhcp_relay_extra_options);
+        m->dhcp_relay_interface_compat = sd_dhcp_relay_interface_unref(m->dhcp_relay_interface_compat);
         sd_dhcp_relay_unref(m->dhcp_relay);
 
         m->routes = set_free(m->routes);

@@ -208,19 +208,18 @@ static int link_configure_dhcp_relay(Link *link) {
                         return r;
         }
 
-        link->dhcp_relay_interface = TAKE_PTR(interface);
-
         if (link->network->dhcp_relay_interface_mode == DHCP_RELAY_INTERFACE_COMPAT &&
-            !link->dhcp_relay_interface_compat) {
+            !link->manager->dhcp_relay_interface_compat) {
                 r = sd_dhcp_relay_add_interface(
                                 link->manager->dhcp_relay,
                                 DHCP_RELAY_IFINDEX_UNBOUND,
                                 /* is_upstream= */ true,
-                                &link->dhcp_relay_interface_compat);
+                                &link->manager->dhcp_relay_interface_compat);
                 if (r < 0)
                         return r;
         }
 
+        link->dhcp_relay_interface = TAKE_PTR(interface);
         return 0;
 }
 
@@ -310,8 +309,10 @@ int link_start_dhcp_relay(Link *link) {
         if (r < 0)
                 return r;
 
-        if (link->dhcp_relay_interface_compat) {
-                r = sd_dhcp_relay_interface_start(link->dhcp_relay_interface_compat);
+        if (link->network &&
+            link->network->dhcp_relay_interface_mode == DHCP_RELAY_INTERFACE_COMPAT &&
+            link->manager->dhcp_relay_interface_compat) {
+                r = sd_dhcp_relay_interface_start(link->manager->dhcp_relay_interface_compat);
                 if (r < 0)
                         return r;
         }

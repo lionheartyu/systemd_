@@ -77,6 +77,7 @@ typedef struct Manager {
 
         /* DHCP relay agent */
         sd_dhcp_relay *dhcp_relay;
+        sd_dhcp_relay_interface *dhcp_relay_interface_compat;
         struct in_addr dhcp_relay_server_address;
         bool dhcp_relay_override_server_id;
         struct iovec dhcp_relay_remote_id;
