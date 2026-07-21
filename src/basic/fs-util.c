@@ -14,6 +14,7 @@
 #include "fd-util.h"
 #include "fs-util.h"
 #include "hostname-util.h"
+#include "iovec-util.h"
 #include "label-util.h"
 #include "lock-util.h"
 #include "log.h"
@@ -848,6 +849,132 @@ int open_parent_at(int dir_fd, const char *path, int flags, mode_t mode) {
                 flags |= O_DIRECTORY;
 
         return RET_NERRNO(openat(dir_fd, parent, flags, mode));
+}
+
+static int pread_full_at(int fd, void *buf, size_t n, uint64_t offset) {
+        uint8_t *p = ASSERT_PTR(buf);
+
+        assert(fd >= 0);
+
+        while (n > 0) {
+                ssize_t k;
+
+                k = pread(fd, p, n, offset);
+                if (k < 0) {
+                        if (errno == EINTR)
+                                continue;
+
+                        return -errno;
+                }
+                if (k == 0)
+                        return false;
+
+                p += k;
+                offset += k;
+                n -= k;
+        }
+
+        return true;
+}
+
+static int fd_regular_file_contents_equal_internal(
+                int a_fd,
+                const struct stat *a,
+                int b_fd,
+                const struct stat *b) {
+
+        assert(a_fd >= 0);
+        assert(a);
+        assert(b_fd >= 0);
+        assert(b);
+
+        if (stat_inode_same(a, b))
+                return true;
+
+        if (a->st_size < 0 || b->st_size < 0)
+                return -EIO;
+
+        if (a->st_size != b->st_size)
+                return false;
+
+        for (uint64_t offset = 0; offset < (uint64_t) a->st_size;) {
+                uint8_t buf_a[16 * 1024], buf_b[sizeof(buf_a)];
+                uint64_t remaining = (uint64_t) a->st_size - offset;
+                size_t n = remaining > sizeof(buf_a) ? sizeof(buf_a) : (size_t) remaining;
+                int r;
+
+                r = pread_full_at(a_fd, buf_a, n, offset);
+                if (r <= 0)
+                        return r;
+
+                r = pread_full_at(b_fd, buf_b, n, offset);
+                if (r <= 0)
+                        return r;
+
+                if (memcmp(buf_a, buf_b, n) != 0)
+                        return false;
+
+                offset += n;
+        }
+
+        return true;
+}
+
+int fd_regular_file_contents_equal(int a_fd, int b_fd) {
+        struct stat a, b;
+        int r;
+
+        assert(a_fd >= 0);
+        assert(b_fd >= 0);
+
+        if (fstat(a_fd, &a) < 0)
+                return -errno;
+        r = stat_verify_regular(&a);
+        if (r < 0)
+                return r;
+
+        if (fstat(b_fd, &b) < 0)
+                return -errno;
+        r = stat_verify_regular(&b);
+        if (r < 0)
+                return r;
+
+        return fd_regular_file_contents_equal_internal(a_fd, &a, b_fd, &b);
+}
+
+int fd_regular_file_contents_equal_iovec(int fd, const struct iovec *data) {
+        struct stat st;
+        int r;
+
+        assert(fd >= 0);
+        assert(iovec_is_set(data));
+
+        if (fstat(fd, &st) < 0)
+                return -errno;
+        r = stat_verify_regular(&st);
+        if (r < 0)
+                return r;
+
+        if (st.st_size < 0 || (uint64_t) st.st_size != data->iov_len)
+                return false;
+
+        const uint8_t *p = ASSERT_PTR(data->iov_base);
+        for (uint64_t offset = 0; offset < data->iov_len;) {
+                uint8_t buf[16 * 1024];
+                uint64_t remaining = data->iov_len - offset;
+                size_t n = remaining > sizeof(buf) ? sizeof(buf) : (size_t) remaining;
+
+                r = pread_full_at(fd, buf, n, offset);
+                if (r <= 0)
+                        return r;
+
+                if (memcmp(buf, p + offset, n) != 0)
+                        return false;
+
+                offset += n;
+        }
+
+        return true;
 }
 
 int conservative_renameat(
