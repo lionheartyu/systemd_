@@ -429,15 +429,26 @@ static int begin_copy_file(
 
         int r;
 
+        assert((source_fd >= 0) != iovec_is_set(data));
         assert(filename);
         assert(target_dir_fd >= 0);
         assert(ret_tmpfile_fd);
         assert(ret_tmpfile_filename);
 
-        if (faccessat(target_dir_fd, filename, F_OK, AT_SYMLINK_NOFOLLOW) < 0) {
+        _cleanup_close_ int existing_fd = openat(target_dir_fd, filename, O_RDONLY|O_CLOEXEC|O_NOCTTY|O_NOFOLLOW);
+        if (existing_fd < 0) {
                 if (errno != ENOENT)
-                        return log_error_errno(errno, "Failed to check if '%s' exists already: %m", filename);
+                        return log_error_errno(errno, "Failed to open existing '%s': %m", filename);
         } else {
+                r = source_fd >= 0 ?
+                        fd_regular_file_contents_equal(existing_fd, source_fd) :
+                        fd_regular_file_contents_equal_iovec(existing_fd, data);
+                if (r < 0)
+                        return log_error_errno(r, "Failed to compare existing '%s': %m", filename);
+                if (r == 0)
+                        return log_error_errno(SYNTHETIC_ERRNO(EEXIST),
+                                               "'%s' already exists with different contents, refusing.", filename);
+
                 log_info("'%s' already in place, not copying.", filename);
 
                 *ret_tmpfile_fd = -EBADF;

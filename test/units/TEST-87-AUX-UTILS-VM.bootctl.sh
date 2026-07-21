@@ -825,6 +825,11 @@ EOF
     grep "^extra /${TOKEN}/hello.confext.raw\$" "$ENTRY" >/dev/null
     grep "^extra /${TOKEN}/hello.cred\$"        "$ENTRY" >/dev/null
 
+    cp "$LINK_WORKDIR/uki_b.efi" /run/systemd/uki/kernel.efi
+    (! "${BOOTCTL[@]}" link-auto)
+    test ! -e "$ESP/loader/entries/${TOKEN}-commit_2.conf"
+    cmp "$LINK_WORKDIR/uki_a.efi" "$ESP/$TOKEN/kernel.efi"
+
     "${BOOTCTL[@]}" unlink "${TOKEN}-commit_1.conf"
     test ! -e "$ENTRY"
     test ! -e "$ESP/$TOKEN/kernel.efi"

@@ -104,6 +104,9 @@ static inline int conservative_rename(const char *oldpath, const char *newpath) 
         return conservative_renameat(AT_FDCWD, oldpath, AT_FDCWD, newpath);
 }
 
+int fd_regular_file_contents_equal(int a_fd, int b_fd);
+int fd_regular_file_contents_equal_iovec(int fd, const struct iovec *data);
+
 int posix_fallocate_loop(int fd, uint64_t offset, uint64_t size);
 
 int parse_cifs_service(const char *s, char **ret_host, char **ret_service, char **ret_path);
