@@ -3264,6 +3264,16 @@ static int patch_sysctl(void) {
 
         flags = effective_clone_ns_flags();
 
+        if (FLAGS_SET(flags, CLONE_NEWUSER|CLONE_NEWNET) && !arg_network_namespace_path) {
+                /* Make unprivileged ping sockets available to all groups in the container's user
+                 * namespace. */
+                r = sysctl_writef("net/ipv4/ping_group_range", "0 " GID_FMT,
+                                 MIN(arg_uid_range - 1, (gid_t) INT32_MAX));
+                if (r < 0)
+                        log_warning_errno(r,
+                                          "Failed to write sysctl 'net.ipv4.ping_group_range', ignoring: %m");
+        }
+
         STRV_FOREACH_PAIR(k, v, arg_sysctl) {
                 bool good = false;
 
