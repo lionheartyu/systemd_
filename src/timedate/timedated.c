@@ -209,7 +209,7 @@ static int context_parse_ntp_services_from_disk(Context *c) {
                         r = read_stripped_line(file, LINE_MAX, &line);
                         if (r < 0) {
                                 log_error_errno(r, "Failed to read %s, ignoring: %m", *f);
-                                continue;
+                                break;
                         }
                         if (r == 0)
                                 break;
