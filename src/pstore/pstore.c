@@ -14,6 +14,7 @@
 #include "copy.h"
 #include "dirent-util.h"
 #include "dlopen-note.h"
+#include "errno-util.h"
 #include "fd-util.h"
 #include "fileio.h"
 #include "iovec-util.h"
@@ -183,6 +184,7 @@ static int process_dmesg_files(PStoreList *list) {
         /* Move files, reconstruct dmesg.txt */
         _cleanup_free_ char *erst_subdir = NULL;
         unsigned long long last_record_id = 0;
+        int ret = 0;
 
         /* When dmesg is written into pstore, it is done so in small chunks, whatever the exchange buffer
          * size is with the underlying pstore backend (ie. EFI may be ~2KiB), which means an example
@@ -233,10 +235,10 @@ static int process_dmesg_files(PStoreList *list) {
                                 return log_oom();
 
                         /* Now move file from pstore to archive storage */
-                        (void) move_file(pe, subdir1, subdir2);
+                        RET_GATHER(ret, move_file(pe, subdir1, subdir2));
 
                         /* Append to the dmesg */
-                        (void) append_dmesg(pe, subdir1, subdir2);
+                        RET_GATHER(ret, append_dmesg(pe, subdir1, subdir2));
                 } else if ((p = startswith(pe->dirent.d_name, "dmesg-erst-"))) {
                         /* For the ERST backend, the record is a monotonically increasing number, seeded as
                          * a timestamp. See linux/drivers/acpi/apei/erst.c in erst_writer(). */
@@ -252,10 +254,10 @@ static int process_dmesg_files(PStoreList *list) {
                                         return log_oom();
 
                         /* Now move file from pstore to archive storage */
-                        (void) move_file(pe, erst_subdir, NULL);
+                        RET_GATHER(ret, move_file(pe, erst_subdir, NULL));
 
                         /* Append to the dmesg */
-                        (void) append_dmesg(pe, erst_subdir, NULL);
+                        RET_GATHER(ret, append_dmesg(pe, erst_subdir, NULL));
 
                         /* Update, but keep erst_subdir for next file */
                         last_record_id = record_id;
@@ -263,7 +265,7 @@ static int process_dmesg_files(PStoreList *list) {
                         log_debug("Unknown backend, ignoring \"%s\".", pe->dirent.d_name);
         }
 
-        return 0;
+        return ret;
 }
 
 static int list_files(PStoreList *list, const char *sourcepath) {
@@ -341,13 +343,13 @@ static int run(int argc, char *argv[]) {
         typesafe_qsort(list.entries, list.n_entries, compare_pstore_entries);
 
         /* Process known file types */
-        (void) process_dmesg_files(&list);
+        RET_GATHER(r, process_dmesg_files(&list));
 
         /* Move left over files out of pstore */
         for (size_t n = 0; n < list.n_entries; n++)
-                (void) move_file(&list.entries[n], NULL, NULL);
+                RET_GATHER(r, move_file(&list.entries[n], NULL, NULL));
 
-        return 0;
+        return r;
 }
 
 DEFINE_MAIN_FUNCTION(run);
