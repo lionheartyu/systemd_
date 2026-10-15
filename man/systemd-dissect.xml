@@ -463,7 +463,7 @@
         <listitem><para>Takes one of <literal>disabled</literal>, <literal>loop</literal>,
         <literal>all</literal>, <literal>crypto</literal>. If <literal>disabled</literal> the image is
         accessed with empty block discarding turned off. If <literal>loop</literal> discarding is enabled if
-        operating on a regular file. If <literal>crypt</literal> discarding is enabled even on encrypted file
+        operating on a regular file. If <literal>crypto</literal> discarding is enabled even on encrypted file
         systems. If <literal>all</literal> discarding is unconditionally enabled.</para>
 
         <xi:include href="version-info.xml" xpointer="v247"/></listitem>

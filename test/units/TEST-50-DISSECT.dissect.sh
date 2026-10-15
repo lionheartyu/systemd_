@@ -9,6 +9,10 @@ set -o pipefail
 # shellcheck source=test/units/util.sh
 . "$(dirname "$0")"/util.sh
 
+systemd-dissect --discard=crypto --help >/dev/null
+systemd-dissect --discard=crypt --help >/dev/null
+assert_eq "$(systemd-dissect --discard=list)" $'disabled\nall\ncrypto\nloop'
+
 . /etc/os-release
 if [[ "${ID_LIKE:-}" == alpine ]]; then
     # Alpine/Nura builds libdevmapper and so on without systemd support, and seems to not wait for

@@ -232,12 +232,12 @@ static int parse_argv(int argc, char *argv[]) {
                                 flags = DISSECT_IMAGE_DISCARD_ON_LOOP;
                         else if (streq(opts.arg, "all"))
                                 flags = DISSECT_IMAGE_DISCARD_ON_LOOP | DISSECT_IMAGE_DISCARD;
-                        else if (streq(opts.arg, "crypt"))
+                        else if (STR_IN_SET(opts.arg, "crypto", "crypt"))
                                 flags = DISSECT_IMAGE_DISCARD_ANY;
                         else if (streq(opts.arg, "list")) {
                                 puts("disabled\n"
                                      "all\n"
-                                     "crypt\n"
+                                     "crypto\n"
                                      "loop");
                                 return 0;
                         } else
