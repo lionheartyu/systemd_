@@ -32,6 +32,37 @@ get_interface_irqs() {
     fi
 }
 
+find_non_first_thread_cpus() {
+    local cpu_path cpu siblings first online cpus=
+
+    for cpu_path in /sys/devices/system/cpu/cpu[0-9]*; do
+        [[ -d "$cpu_path/topology" ]] || continue
+
+        cpu="${cpu_path##*cpu}"
+        if [[ -e "$cpu_path/online" ]]; then
+            online=$(<"$cpu_path/online")
+            [[ "$online" == 1 ]] || continue
+        fi
+
+        siblings=$(<"$cpu_path/topology/thread_siblings_list")
+        first="${siblings%%[,-]*}"
+        [[ "$first" == "$cpu" ]] && continue
+
+        cpus+="${cpus:+,}$cpu"
+    done
+
+    [[ -n "$cpus" ]] || return 1
+    echo "$cpus"
+}
+
+reset_irq_affinity() {
+    local irq default_affinity
+    default_affinity=$(</proc/irq/default_smp_affinity)
+    for irq in $irqs; do
+        echo "$default_affinity" >"/proc/irq/$irq/smp_affinity"
+    done
+}
+
 check_irq_affinity() {
     local irq="$1"
     local expected_mask="$2"
@@ -189,7 +220,45 @@ EOF
         echo "Skipping IRQAffinity= spread test (need >=4 CPUs and >1 IRQ)"
     fi
 
-    # Test 1e: Test IRQAffinityNUMA= if NUMA is available
+    # Test 1e: test IRQAffinity= with spread policy when only non-first SMT threads are allowed
+    sibling_cpus=$(find_non_first_thread_cpus || :)
+    if [[ -n "$sibling_cpus" ]] && [[ "$irq_count" -gt 1 ]]; then
+        cat >/run/systemd/network/00-test-irq-affinity.link <<EOF
+[Match]
+MACAddress=$mac
+
+[Link]
+IRQAffinityPolicy=spread
+IRQAffinity=$sibling_cpus
+EOF
+
+        reset_irq_affinity
+        udevadm control --reload
+        udevadm trigger --action=add "/sys/class/net/$iface"
+        udevadm settle --timeout=30
+
+        sibling_cpu_count=$(tr ',' '\n' <<<"$sibling_cpus" | sort -u | wc -l)
+        assigned_cpus=()
+        for irq in $irqs; do
+            affinity_list=$(cat "/proc/irq/$irq/smp_affinity_list")
+            if [[ ! ",$sibling_cpus," == *",$affinity_list,"* ]]; then
+                echo "ERROR: IRQ $irq is on CPU $affinity_list, expected one of $sibling_cpus"
+                exit 1
+            fi
+            assigned_cpus+=("$affinity_list")
+        done
+
+        unique_assigned_cpus=$(printf '%s\n' "${assigned_cpus[@]}" | sort -u | wc -l)
+        if [[ "$sibling_cpu_count" -gt 1 ]] && [[ "$unique_assigned_cpus" -lt 2 ]]; then
+            echo "ERROR: spread policy assigned all IRQs to one non-first SMT thread"
+            exit 1
+        fi
+        echo "IRQAffinity= filtering to non-first SMT threads works correctly"
+    else
+        echo "Skipping non-first SMT thread test (need online SMT siblings and >1 IRQ)"
+    fi
+
+    # Test 1f: Test IRQAffinityNUMA= if NUMA is available
     if [[ -d /sys/devices/system/node/node0 ]]; then
         # Get CPUs on NUMA node 0
         numa0_cpus=$(cat /sys/devices/system/node/node0/cpulist)
@@ -219,7 +288,7 @@ EOF
         echo "Skipping IRQAffinityNUMA= test (no NUMA available)"
     fi
 
-    # Test 1f: Test empty intersection error case
+    # Test 1g: Test empty intersection error case
     # This should log an error and skip affinity configuration
     if [[ -d /sys/devices/system/node/node0 ]] && [[ -d /sys/devices/system/node/node1 ]]; then
         # Get first CPU from node 0 that is NOT in node 1

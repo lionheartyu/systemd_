@@ -1248,26 +1248,83 @@ static int build_die_info(const CPUTopology *topology, size_t topology_count, Di
 
         CLEANUP_ARRAY(dies, die_count, die_info_free);
 
+        /* Create an entry for every die first. This is important when the input was filtered by
+         * IRQAffinity=: a die may contain only non-first hyperthreads after filtering. */
         FOREACH_ARRAY(cpu_topology, topology, topology_count) {
                 DieInfo *die = NULL;
 
-                /* Only consider first hyperthreads for initial spread */
-                if (!cpu_topology->is_first_thread)
-                        continue;
-
-                /* Find or create die entry */
                 for (size_t j = 0; j < die_count; j++)
                         if (dies[j].die_id == cpu_topology->die_id) {
                                 die = &dies[j];
                                 break;
                         }
 
-                if (!die) {
-                        if (!GREEDY_REALLOC(dies, die_count + 1))
-                                return log_oom();
-                        die = &dies[die_count++];
-                        *die = (DieInfo) { .die_id = cpu_topology->die_id };
-                }
+                if (die)
+                        continue;
+
+                if (!GREEDY_REALLOC(dies, die_count + 1))
+                        return log_oom();
+
+                die = &dies[die_count++];
+                *die = (DieInfo) { .die_id = cpu_topology->die_id };
+        }
+
+        /* Prefer the first hyperthread of each physical core. */
+        FOREACH_ARRAY(cpu_topology, topology, topology_count) {
+                DieInfo *die = NULL;
+
+                if (!cpu_topology->is_first_thread)
+                        continue;
+
+                for (size_t j = 0; j < die_count; j++)
+                        if (dies[j].die_id == cpu_topology->die_id) {
+                                die = &dies[j];
+                                break;
+                        }
+                assert(die);
+
+                if (!GREEDY_REALLOC(die->cpus, die->cpu_count + 1))
+                        return log_oom();
+
+                die->cpus[die->cpu_count++] = cpu_topology->cpu;
+        }
+
+        /* For each core without an eligible first hyperthread, fall back to its first remaining
+         * eligible hyperthread. This keeps IRQAffinity= effective for sibling-only CPU sets and
+         * also handles systems where the first hyperthread is offline. */
+        for (size_t i = 0; i < topology_count; i++) {
+                const CPUTopology *cpu_topology = &topology[i];
+                DieInfo *die = NULL;
+                bool core_has_cpu = false;
+
+                if (cpu_topology->is_first_thread)
+                        continue;
+
+                for (size_t j = 0; j < die_count; j++)
+                        if (dies[j].die_id == cpu_topology->die_id) {
+                                die = &dies[j];
+                                break;
+                        }
+                assert(die);
+
+                /* Keep one CPU per physical core, even when only its sibling threads are
+                 * available in the filtered topology. */
+                for (size_t j = 0; j < topology_count; j++)
+                        if (topology[j].die_id == cpu_topology->die_id &&
+                            topology[j].core_id == cpu_topology->core_id &&
+                            topology[j].is_first_thread) {
+                                core_has_cpu = true;
+                                break;
+                        }
+
+                if (core_has_cpu)
+                        continue;
+
+                /* The topology is sorted by die, core, and CPU, so any earlier eligible sibling
+                 * from this core has already been handled. */
+                if (i > 0 && topology[i - 1].die_id == cpu_topology->die_id &&
+                    topology[i - 1].core_id == cpu_topology->core_id)
+                        continue;
 
                 if (!GREEDY_REALLOC(die->cpus, die->cpu_count + 1))
                         return log_oom();
@@ -1309,7 +1366,7 @@ static int build_die_info(const CPUTopology *topology, size_t topology_count, Di
 /* Select CPUs for IRQ affinity spreading with optimal topology distribution.
  *
  * Algorithm:
- * 1. Group CPUs by die (L3 cache domain), using only first hyperthreads
+ * 1. Group CPUs by die (L3 cache domain), preferring first hyperthreads when available
  * 2. Apply equidistant permutation to both die order and CPUs within each die,
  *    so consecutive selections are maximally spread (e.g., [0,1,2,3] -> [0,2,1,3])
  * 3. Round-robin across dies, picking one CPU per die per round
@@ -1385,7 +1442,7 @@ static int select_spread_cpus(
                 if (made_progress)
                         continue;
 
-                /* All first HTs exhausted, wrap around for remaining IRQs */
+                /* All preferred CPUs exhausted, wrap around for remaining IRQs */
                 if (dies_exhausted < die_count)
                         break;
 
