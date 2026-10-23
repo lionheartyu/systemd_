@@ -9,7 +9,9 @@
 #include "build-path.h"
 #include "common-signal.h"
 #include "env-util.h"
+#include "exec-util.h"
 #include "event-util.h"
+#include "exit-status.h"
 #include "fd-util.h"
 #include "format-util.h"
 #include "fs-util.h"
@@ -38,6 +40,12 @@ static int on_worker_exit(sd_event_source *s, const siginfo_t *si, void *userdat
 
         assert_se(!set_remove(m->workers_dynamic, s) != !set_remove(m->workers_fixed, s));
         sd_event_source_disable_unref(s);
+
+        if (si->si_code == CLD_EXITED && si->si_status == EXIT_EXEC) {
+                log_warning("Worker " PID_FMT " failed to execute, stopping user database manager.", si->si_pid);
+                sd_event_exit(m->event, EXIT_FAILURE);
+                return 0;
+        }
 
         if (si->si_code == CLD_EXITED) {
                 if (si->si_status == EXIT_SUCCESS)
@@ -210,9 +218,20 @@ static int start_one_worker(Manager *m) {
                         _exit(EXIT_FAILURE);
                 }
 
-                r = invoke_callout_binary(SYSTEMD_USERWORK_PATH, STRV_MAKE(SYSTEMD_USERWORK_PATH, "xxxxxxxxxxxxxxxx")); /* With some extra space rename_process() can make use of */
-                log_error_errno(r, "Failed to start worker process: %m");
-                _exit(EXIT_FAILURE);
+                _cleanup_free_ char *worker_path = NULL;
+                _cleanup_close_ int worker_fd = pin_callout_binary(SYSTEMD_USERWORK_PATH, &worker_path);
+                if (worker_fd < 0) {
+                        log_error_errno(worker_fd, "Failed to find worker binary '%s': %m", SYSTEMD_USERWORK_PATH);
+                        _exit(EXIT_EXEC);
+                }
+
+                r = fexecve_or_execve(
+                                worker_fd,
+                                worker_path,
+                                STRV_MAKE(worker_path, "xxxxxxxxxxxxxxxx"), /* With some extra space rename_process() can make use of */
+                                environ);
+                log_error_errno(r, "Failed to execute worker binary '%s': %m", worker_path);
+                _exit(EXIT_EXEC);
         }
 
         r = event_add_child_pidref(m->event, &source, &pidref, WEXITED, on_worker_exit, m);
