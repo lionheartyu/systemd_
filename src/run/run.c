@@ -2534,6 +2534,10 @@ static int start_via_ptybroker(void) {
                                        /* ret_reply= */ NULL,
                                        /* types= */ NULL);
                 if (r < 0) {
+                        if (!sd_bus_error_has_name(&error, SD_BUS_ERROR_UNKNOWN_OBJECT))
+                                return log_error_errno(r, "Failed to add reference to unit '%s': %s",
+                                                      c.unit, bus_error_message(&error, r));
+
                         log_debug_errno(r, "Failed to add reference to unit '%s', assuming it is already gone: %s",
                                         c.unit, bus_error_message(&error, r));
                         c.unit = mfree(c.unit);
