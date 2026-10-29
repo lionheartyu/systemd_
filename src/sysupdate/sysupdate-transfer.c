@@ -31,6 +31,7 @@
 #include "percent-util.h"
 #include "pidref.h"
 #include "process-util.h"
+#include "recurse-dir.h"
 #include "rm-rf.h"
 #include "signal-util.h"
 #include "specifier.h"
@@ -995,8 +996,36 @@ int transfer_resolve_paths(
         return 0;
 }
 
+static int transfer_remove_temporary_callback(
+                RecurseDirEvent event,
+                const char *path,
+                int dir_fd,
+                int inode_fd,
+                const struct dirent *de,
+                const struct statx *sx,
+                void *userdata) {
+
+        assert(path);
+        assert(dir_fd >= 0);
+        assert(de);
+
+        if (!IN_SET(event, RECURSE_DIR_ENTER, RECURSE_DIR_ENTRY) ||
+            !STARTSWITH_SET(de->d_name, ".#", ".sysupdate.partial."))
+                return RECURSE_DIR_CONTINUE;
+
+        int r = rm_rf_child(dir_fd, de->d_name, REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_CHMOD);
+        if (r == -ENOENT)
+                return RECURSE_DIR_SKIP_ENTRY;
+        if (r < 0) {
+                log_warning_errno(r, "Failed to remove temporary resource instance '%s', ignoring: %m", path);
+                return RECURSE_DIR_SKIP_ENTRY;
+        }
+
+        log_debug("Removed temporary resource instance '%s'.", path);
+        return RECURSE_DIR_SKIP_ENTRY;
+}
+
 static void transfer_remove_temporary(Transfer *t) {
-        _cleanup_closedir_ DIR *d = NULL;
         int r;
 
         assert(t);
@@ -1007,42 +1036,13 @@ static void transfer_remove_temporary(Transfer *t) {
         if (!IN_SET(t->target.type, RESOURCE_REGULAR_FILE, RESOURCE_DIRECTORY, RESOURCE_SUBVOLUME))
                 return;
 
-        /* Removes all incomplete files/dirs from previous runs in the target directory. Clean both the
+        /* Removes all incomplete files/dirs from previous runs below the target directory. Clean both the
          * current partial sysupdate prefix and the legacy '.#' prefix. */
 
-        d = opendir(t->target.path);
-        if (!d) {
-                if (errno == ENOENT)
-                        return;
-
-                log_debug_errno(errno, "Failed to open target directory '%s', ignoring: %m", t->target.path);
-                return;
-        }
-
-        for (;;) {
-                struct dirent *de;
-
-                errno = 0;
-                de = readdir_no_dot(d);
-                if (!de) {
-                        if (errno != 0)
-                                log_debug_errno(errno, "Failed to read target directory '%s', ignoring: %m", t->target.path);
-                        break;
-                }
-
-                if (!STARTSWITH_SET(de->d_name, ".#", ".sysupdate.partial."))
-                        continue;
-
-                r = rm_rf_child(dirfd(d), de->d_name, REMOVE_PHYSICAL|REMOVE_SUBVOLUME|REMOVE_CHMOD);
-                if (r == -ENOENT)
-                        continue;
-                if (r < 0) {
-                        log_warning_errno(r, "Failed to remove temporary resource instance '%s/%s', ignoring: %m", t->target.path, de->d_name);
-                        continue;
-                }
-
-                log_debug("Removed temporary resource instance '%s/%s'.", t->target.path, de->d_name);
-        }
+        r = recurse_dir_at(AT_FDCWD, t->target.path, /* statx_mask= */ 0, UINT_MAX,
+                           RECURSE_DIR_SAME_MOUNT, transfer_remove_temporary_callback, t);
+        if (r < 0 && r != -ENOENT)
+                log_debug_errno(r, "Failed to recursively scan target directory '%s', ignoring: %m", t->target.path);
 }
 
 static int transfer_instance_vacuum(
