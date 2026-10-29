@@ -196,6 +196,12 @@ cat >"$OCI/config.json" <<EOF
                 "fileMode" : 666,
                 "uid" : 0,
                 "gid" : 0
+            },
+            {
+                "type" : "b",
+                "path" : "/dev/oci-dev-default-mode",
+                "major" : 4,
+                "minor" : 2
             }
         ],
         "resources" : {
@@ -380,6 +386,7 @@ test -e /var/hello
 test -c /dev/zero
 test -b "$DEV"
 [[ "\$(stat -c '%t:%T' "$DEV")" == 4:2 ]]
+[[ "\$(stat -c '%a' /dev/oci-dev-default-mode)" == 666 ]]
 
 # Linux - maskedPaths
 if [[ "$HAVE_PROC_KCORE" == 1 ]]; then

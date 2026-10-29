@@ -803,7 +803,7 @@ static int oci_devices(const char *name, sd_json_variant *v, sd_json_dispatch_fl
                         .gid = GID_INVALID,
                         .major = UINT_MAX,
                         .minor = UINT_MAX,
-                        .mode = 0644,
+                        .mode = 0666,
                 };
 
                 r = oci_dispatch(e, table, flags, node);
