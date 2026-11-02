@@ -156,6 +156,8 @@ coredumpctl --directory=/var/log/journal
 coredumpctl --file="/var/log/journal/$(</etc/machine-id)"/*.journal
 coredumpctl --since=@0
 coredumpctl --since=yesterday --until=tomorrow
+(! coredumpctl --since=tomorrow -1)
+(! coredumpctl info --since=tomorrow)
 # We should have a couple of externally stored coredumps
 coredumpctl --field=COREDUMP_FILENAME | tee /tmp/coredumpctl.out
 grep "/var/lib/systemd/coredump/core" /tmp/coredumpctl.out
