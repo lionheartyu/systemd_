@@ -190,6 +190,16 @@ int verb_dump_core(int argc, char *argv[], uintptr_t _data, void *userdata) {
                 return r;
 
         r = sd_journal_previous(j);
+        if (r > 0 && arg_since != USEC_INFINITY) {
+                usec_t usec;
+
+                r = sd_journal_get_realtime_usec(j, &usec);
+                if (r < 0)
+                        return log_error_errno(r, "Failed to determine timestamp: %m");
+                if (usec < arg_since)
+                        r = 0;
+        }
+
         if (r > 0 && !arg_quiet)
                 log_notice("More than one entry matches, ignoring rest.");
 
