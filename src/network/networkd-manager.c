@@ -827,6 +827,7 @@ Manager* manager_free(Manager *m) {
         set_free(m->rules);
 
         sd_bus_slot_unref(m->slot_mm);
+        sd_bus_slot_unref(m->timezone_slot);
         hashmap_free(m->modems_by_path);
 
         sd_netlink_unref(m->rtnl);
@@ -1310,6 +1311,8 @@ static int set_timezone_handler(sd_bus_message *m, void *userdata, sd_bus_error 
 
         assert(m);
 
+        manager->timezone_slot = sd_bus_slot_unref(manager->timezone_slot);
+
         e = sd_bus_message_get_error(m);
         if (e) {
                 r = sd_bus_error_get_errno(e);
@@ -1323,6 +1326,7 @@ static int set_timezone_handler(sd_bus_message *m, void *userdata, sd_bus_error 
 }
 
 static int manager_send_timezone(Manager *m) {
+        _cleanup_(sd_bus_slot_unrefp) sd_bus_slot *slot = NULL;
         int r;
 
         assert(m);
@@ -1335,7 +1339,7 @@ static int manager_send_timezone(Manager *m) {
 
         r = bus_call_method_async(
                         m->bus,
-                        /* ret_slot= */ NULL,
+                        &slot,
                         bus_timedate,
                         "SetTimezone",
                         set_timezone_handler,
@@ -1345,6 +1349,11 @@ static int manager_send_timezone(Manager *m) {
                         false);
         if (r < 0)
                 return log_error_errno(r, "Could not set timezone: %m");
+
+        /* A newer request supersedes the previous one. Unrefing its slot prevents its reply
+         * handler from invalidating the new cached timezone. */
+        m->timezone_slot = sd_bus_slot_unref(m->timezone_slot);
+        m->timezone_slot = TAKE_PTR(slot);
 
         return 0;
 }
