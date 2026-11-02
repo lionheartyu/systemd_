@@ -1339,11 +1339,29 @@ static void test_exec_standardoutput(Manager *m) {
 }
 
 static void test_exec_standardoutput_append(Manager *m) {
+        ASSERT_OK(write_string_file("/tmp/test-exec-standardoutput-same-file-output",
+                                    "hello\n",
+                                    WRITE_STRING_FILE_CREATE|WRITE_STRING_FILE_TRUNCATE));
+        ASSERT_OK(write_string_file("/tmp/test-exec-standardoutput-same-file-expected",
+                                    "hello\nhello\n",
+                                    WRITE_STRING_FILE_CREATE|WRITE_STRING_FILE_TRUNCATE));
+
         test(m, "exec-standardoutput-append.service", 0, CLD_EXITED);
+        test(m, "exec-standardoutput-append-same-file.service", 0, CLD_EXITED);
+
+        (void) unlink("/tmp/test-exec-standardoutput-same-file-output");
+        (void) unlink("/tmp/test-exec-standardoutput-same-file-expected");
 }
 
 static void test_exec_standardoutput_truncate(Manager *m) {
+        ASSERT_OK(write_string_file("/tmp/test-exec-standardoutput-same-file-output",
+                                    "hello\n",
+                                    WRITE_STRING_FILE_CREATE|WRITE_STRING_FILE_TRUNCATE));
+
         test(m, "exec-standardoutput-truncate.service", 0, CLD_EXITED);
+        test(m, "exec-standardoutput-truncate-same-file.service", 0, CLD_EXITED);
+
+        (void) unlink("/tmp/test-exec-standardoutput-same-file-output");
 }
 
 static void test_exec_condition(Manager *m) {

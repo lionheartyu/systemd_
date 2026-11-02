@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[Unit]
+Description=Test StandardOutput=truncate: when it shares a path with StandardInput=file:
+
+[Service]
+StandardInput=file:/tmp/test-exec-standardoutput-same-file-output
+StandardOutput=truncate:/tmp/test-exec-standardoutput-same-file-output
+StandardError=null
+ExecStart=cat
+ExecStartPost=test ! -s /tmp/test-exec-standardoutput-same-file-output
+Type=oneshot

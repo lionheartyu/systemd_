@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[Unit]
+Description=Test StandardOutput=append: when it shares a path with StandardInput=file:
+
+[Service]
+StandardInput=file:/tmp/test-exec-standardoutput-same-file-output
+StandardOutput=append:/tmp/test-exec-standardoutput-same-file-output
+StandardError=null
+ExecStart=dd bs=6 count=1 status=none
+ExecStartPost=cmp /tmp/test-exec-standardoutput-same-file-output /tmp/test-exec-standardoutput-same-file-expected
+Type=oneshot

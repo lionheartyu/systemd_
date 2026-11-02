@@ -856,7 +856,8 @@ static int setup_output(
 
                 /* stdin points to the same file hence setup_input() opened it as rw already?
                  * Then just duplicate it. */
-                if (context->std_input == EXEC_INPUT_FILE &&
+                if (o == EXEC_OUTPUT_FILE &&
+                    context->std_input == EXEC_INPUT_FILE &&
                     path_equal(context->stdio_file[fileno], context->stdio_file[STDIN_FILENO]))
                         return RET_NERRNO(dup2(STDIN_FILENO, fileno));
 
