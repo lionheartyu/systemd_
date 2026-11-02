@@ -249,9 +249,19 @@ int oomd_sort_cgroup_contexts(Hashmap *h, oomd_compare_t compare_func, const cha
         return (int) k;
 }
 
+bool oomd_cgroup_kill_needs_fallback(const char *target, const char *self) {
+        assert(target);
+        assert(self);
+
+        /* cgroup.kill cannot exclude systemd-oomd itself, so use the recursive path when
+         * the target contains the oomd process. */
+        return path_startswith(self, target);
+}
+
 int oomd_cgroup_kill(Manager *m, OomdCGroupContext *ctx, bool recurse, const char *reason) {
         _cleanup_free_ char *cg_path_self = NULL;
         uint64_t n_pids_killed = UINT64_MAX;
+        bool use_cgroup_kill = false;
         int r;
 
         assert(ctx);
@@ -264,14 +274,15 @@ int oomd_cgroup_kill(Manager *m, OomdCGroupContext *ctx, bool recurse, const cha
         else if (streq(cg_path_self, ctx->path)) {
                 log_debug("Skipping own cgroup '%s'", ctx->path);
                 return 0;
-        }
+        } else
+                use_cgroup_kill = !oomd_cgroup_kill_needs_fallback(ctx->path, cg_path_self);
 
         r = increment_oomd_xattr(ctx->path, "user.oomd_ooms", 1);
         if (r < 0)
                 log_debug_errno(r, "Failed to set user.oomd_ooms before kill: %m");
 
         if (recurse) {
-                r = cg_kill_kernel_sigkill(ctx->path, &n_pids_killed);
+                r = use_cgroup_kill ? cg_kill_kernel_sigkill(ctx->path, &n_pids_killed) : -EOPNOTSUPP;
                 if (r == -EOPNOTSUPP) {
                         _cleanup_set_free_ Set *pids_killed = set_new(/* hash_ops= */ NULL);
                         if (!pids_killed)

@@ -219,6 +219,13 @@ TEST(oomd_cgroup_kill) {
         ASSERT_OK(cg_trim(subcgroup, /* delete_root */ true));
 }
 
+TEST(oomd_cgroup_kill_needs_fallback) {
+        ASSERT_TRUE(oomd_cgroup_kill_needs_fallback("/system.slice", "/system.slice/systemd-oomd.service"));
+        ASSERT_TRUE(oomd_cgroup_kill_needs_fallback("/", "/system.slice/systemd-oomd.service"));
+        ASSERT_FALSE(oomd_cgroup_kill_needs_fallback("/user.slice", "/system.slice/systemd-oomd.service"));
+        ASSERT_FALSE(oomd_cgroup_kill_needs_fallback("/system.slice/other.service", "/system.slice/systemd-oomd.service"));
+}
+
 TEST(oomd_cgroup_kill_signal_reason) {
         _cleanup_(sd_bus_flush_close_unrefp) sd_bus *server = NULL, *client = NULL;
         _cleanup_free_ char *subcgroup = NULL;
