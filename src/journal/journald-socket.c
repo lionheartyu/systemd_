@@ -5,6 +5,7 @@
 #include <sys/uio.h>
 
 #include "alloc-util.h"
+#include "errno-util.h"
 #include "fd-util.h"
 #include "iovec-util.h"
 #include "journald-manager.h"
@@ -153,12 +154,40 @@ int manager_forward_socket(
         xsprintf(monotonic_buf, "__MONOTONIC_TIMESTAMP="USEC_FMT"\n\n", ts->monotonic);
         iov[iov_idx++] = IOVEC_MAKE_STRING(monotonic_buf);
 
-        if (writev(m->forward_socket_fd, iov, iov_idx) < 0) {
-                log_debug_errno(errno, "Failed to forward log message over socket: %m");
+        for (size_t i = 0; i < iov_idx; ) {
+                size_t n_iovecs;
+                ssize_t k;
 
-                /* If we failed to send once we will probably fail again so wait for a new connection to
-                 * establish before attempting to forward again. */
-                m->forward_socket_fd = safe_close(m->forward_socket_fd);
+                while (i < iov_idx && !iovec_is_set(iov + i))
+                        i++;
+                if (i >= iov_idx)
+                        break;
+
+                n_iovecs = MIN(iov_idx - i, (size_t) IOV_MAX);
+                k = writev(m->forward_socket_fd, iov + i, n_iovecs);
+                if (k < 0) {
+                        if (errno == EINTR)
+                                continue;
+
+                        log_debug_errno(errno, "Failed to forward log message over socket: %m");
+
+                        /* If we failed to send once we will probably fail again so wait for a new connection to
+                         * establish before attempting to forward again. */
+                        m->forward_socket_fd = safe_close(m->forward_socket_fd);
+                        return 0;
+                }
+
+                if (k == 0) {
+                        log_debug_errno(SYNTHETIC_ERRNO(EIO), "Failed to forward log message over socket: short write");
+
+                        /* If we failed to send once we will probably fail again so wait for a new connection to
+                         * establish before attempting to forward again. */
+                        m->forward_socket_fd = safe_close(m->forward_socket_fd);
+                        return 0;
+                }
+
+                if (iovec_inc_many(iov + i, n_iovecs, k))
+                        break;
         }
 
         return 0;
