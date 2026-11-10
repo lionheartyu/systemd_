@@ -19,6 +19,17 @@ static const char* const fou_encap_type_table[_NETDEV_FOO_OVER_UDP_ENCAP_MAX] = 
 DEFINE_STRING_TABLE_LOOKUP(fou_encap_type, FooOverUDPEncapType);
 DEFINE_CONFIG_PARSE_ENUM(config_parse_fou_encap_type, fou_encap_type, FooOverUDPEncapType);
 
+int fou_tunnel_address_family(const FouTunnel *t) {
+        assert(t);
+
+        if (t->local_family != AF_UNSPEC)
+                return t->local_family;
+        if (t->peer_family != AF_UNSPEC)
+                return t->peer_family;
+
+        return AF_INET;
+}
+
 static int netdev_fill_fou_tunnel_message(NetDev *netdev, sd_netlink_message *m) {
         FouTunnel *t = FOU(netdev);
         uint8_t encap_type;
@@ -49,7 +60,7 @@ static int netdev_fill_fou_tunnel_message(NetDev *netdev, sd_netlink_message *m)
         if (r < 0)
                 return r;
 
-        r = sd_netlink_message_append_u8(m, FOU_ATTR_AF, AF_INET);
+        r = sd_netlink_message_append_u8(m, FOU_ATTR_AF, fou_tunnel_address_family(t));
         if (r < 0)
                 return r;
 
@@ -206,6 +217,13 @@ static int netdev_fou_tunnel_verify(NetDev *netdev, const char *filename) {
                 return log_netdev_error_errno(netdev, SYNTHETIC_ERRNO(EINVAL),
                                               "FooOverUDP peer port not set but peer address is configured in %s. Rejecting configuration.",
                                               filename);
+
+        if (t->local_family != AF_UNSPEC && t->peer_family != AF_UNSPEC &&
+            t->local_family != t->peer_family)
+                return log_netdev_error_errno(netdev, SYNTHETIC_ERRNO(EINVAL),
+                                              "FooOverUDP local and peer addresses must use the same address family in %s. Rejecting configuration.",
+                                              filename);
+
         return 0;
 }
 

@@ -33,6 +33,8 @@ typedef struct FouTunnel {
 DEFINE_NETDEV_CAST(FOU, FouTunnel);
 extern const NetDevVTable foutnl_vtable;
 
+int fou_tunnel_address_family(const FouTunnel *t);
+
 DECLARE_STRING_TABLE_LOOKUP(fou_encap_type, FooOverUDPEncapType);
 
 CONFIG_PARSER_PROTOTYPE(config_parse_fou_encap_type);

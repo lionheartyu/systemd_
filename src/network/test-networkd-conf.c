@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 
+#include <netinet/in.h>
+
 #include "conf-parser.h"
+#include "fou-tunnel.h"
 #include "hexdecoct.h"
 #include "net-condition.h"
 #include "networkd-address.h"
@@ -13,6 +16,46 @@
 #include "set.h"
 #include "strv.h"
 #include "tests.h"
+
+TEST(fou_tunnel_address_family) {
+        FouTunnel t = {
+                .local_family = AF_UNSPEC,
+                .peer_family = AF_UNSPEC,
+        };
+
+        ASSERT_EQ(fou_tunnel_address_family(&t), AF_INET);
+
+        t.peer_family = AF_INET6;
+        ASSERT_EQ(fou_tunnel_address_family(&t), AF_INET6);
+
+        t.local_family = AF_INET6;
+        ASSERT_EQ(fou_tunnel_address_family(&t), AF_INET6);
+}
+
+TEST(fou_tunnel_address_family_mismatch) {
+        FouTunnel t = {
+                .meta.kind = NETDEV_KIND_FOU,
+                .fou_encap_type = NETDEV_FOO_OVER_UDP_ENCAP_DIRECT,
+                .fou_protocol = IPPROTO_GRE,
+                .local_family = AF_UNSPEC,
+                .peer_family = AF_UNSPEC,
+        };
+
+        ASSERT_OK(config_parse_fou_tunnel_address(
+                                  "netdev", "filename", 1, "FooOverUDP", 1, "Local", 0,
+                                  "2001:db8::1", &t.local, &t));
+        ASSERT_EQ(t.local_family, AF_INET6);
+        ASSERT_EQ(fou_tunnel_address_family(&t), AF_INET6);
+
+        ASSERT_OK(config_parse_fou_tunnel_address(
+                                  "netdev", "filename", 1, "FooOverUDP", 1, "Peer", 0,
+                                  "2001:db8::2", &t.peer, &t));
+        t.peer_port = 5555;
+        ASSERT_OK(foutnl_vtable.config_verify(&t.meta, "filename"));
+
+        t.local_family = AF_INET;
+        ASSERT_ERROR(foutnl_vtable.config_verify(&t.meta, "filename"), EINVAL);
+}
 
 static void test_config_parse_duid_type_one(const char *rvalue, DUIDType expected, usec_t expected_time) {
         DUID actual = {};
