@@ -236,6 +236,9 @@ executables += [
                 'dependencies' : libatomic,
         },
         network_test_template + {
+                'sources' : files('test-bareudp.c'),
+        },
+        network_test_template + {
                 'sources' : files('test-networkd-conf.c'),
                 'dependencies' : libatomic,
         },
