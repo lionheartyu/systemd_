@@ -63,9 +63,11 @@ static int neighbor_proxy_address_configure_handler(
         assert(link);
 
         r = sd_netlink_message_get_errno(m);
-        if (r < 0)
-                log_link_message_warning_errno(link, m, r,
-                                               "Could not add neighbor proxy address entry, ignoring");
+        if (r < 0 && r != -EEXIST) {
+                log_link_message_warning_errno(link, m, r, "Could not add neighbor proxy address entry");
+                link_enter_failed(link);
+                return 1;
+        }
 
         if (link->static_neighbor_proxy_messages == 0) {
                 log_link_debug(link, "Neighbor proxy addresses set.");
